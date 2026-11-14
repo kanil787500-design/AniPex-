@@ -3,8 +3,15 @@ package com.example.engine3d
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+data class CylinderObstacle(
+  val x: Float,
+  val z: Float,
+  val radius: Float,
+)
 
 object Math3D {
   const val DEG_TO_RAD = (PI / 180.0).toFloat()
@@ -42,10 +49,6 @@ object Math3D {
     return atan2(toX - fromX, toZ - fromZ) * RAD_TO_DEG
   }
 
-  /**
-   * Computes the exact inverse-transpose upper 3x3 normal matrix from a 4x4 model matrix,
-   * ensuring accurate cel-shading bands and Fresnel rim lights even under non-uniform scaling.
-   */
   fun computeNormalMatrix(modelMat: FloatArray, outNormalMat: FloatArray) {
     val a00 = modelMat[0]; val a01 = modelMat[4]; val a02 = modelMat[8]
     val a10 = modelMat[1]; val a11 = modelMat[5]; val a12 = modelMat[9]
@@ -63,7 +66,6 @@ object Math3D {
       return
     }
     val invDet = 1f / det
-    // Store transpose(inverse(M)) in column-major order for GLSL mat3
     outNormalMat[0] = b01 * invDet
     outNormalMat[1] = b11 * invDet
     outNormalMat[2] = b21 * invDet
@@ -76,27 +78,49 @@ object Math3D {
   }
 
   /**
-   * Continuous multi-octave procedural heightfield for the Aetherbound open world.
-   * Features a central Astral Sanctuary plateau, shimmering lake basin in the east-south,
-   * rolling sunlit hills, and surrounding mountain ridges.
+   * Procedural terrain heightfield for Aetherbound's open world.
    */
   fun openWorldHeight(x: Float, z: Float): Float {
     val distFromCenter = sqrt(x * x + z * z)
-    val smoothPlateau = smoothstep(13f, 26f, distFromCenter)
+    val smoothPlateau = smoothstep(14f, 28f, distFromCenter)
 
-    val hill1 = sin(x * 0.042f) * cos(z * 0.042f) * 5.0f
-    val hill2 = sin(x * 0.088f + 1.3f) * sin(z * 0.082f + 0.7f) * 2.0f
-    val detail = cos((x + z) * 0.16f) * 0.45f
+    val hill1 = sin(x * 0.042f) * cos(z * 0.042f) * 5.2f
+    val hill2 = sin(x * 0.088f + 1.3f) * sin(z * 0.082f + 0.7f) * 2.1f
+    val detail = cos((x + z) * 0.16f) * 0.42f
 
-    // Sculpted Moonlit Lake basin around (32, 26)
+    // Sculpted Moonlit Lake basin around (32, 24)
     val lakeDist = distXZ(x, z, 32f, 24f)
-    val lakeCarve = (1f - smoothstep(8f, 24f, lakeDist)) * 5.2f
+    val lakeCarve = (1f - smoothstep(8f, 24f, lakeDist)) * 5.4f
 
-    // Dramatic outer mountain rim
-    val rimLift = ((distFromCenter - 58f) / 42f).coerceIn(0f, 1.65f)
-    val mountain = rimLift * rimLift * 15f
+    // Gently level NTE Downtown District (x in [-38, 38], z in [-60, -17]) for clean streets & sidewalks
+    val inCityX = smoothstep(42f, 26f, kotlin.math.abs(x))
+    val inCityZ = smoothstep(-15f, -21f, z) * smoothstep(-66f, -54f, z)
+    val cityFlatten = 1f - (inCityX * inCityZ * 0.96f)
 
-    return (hill1 + hill2 + detail + mountain) * smoothPlateau - lakeCarve
+    // Outer mountain ridges
+    val rimLift = ((distFromCenter - 56f) / 42f).coerceIn(0f, 1.7f)
+    val mountain = rimLift * rimLift * 15.5f
+
+    return (hill1 + hill2 + detail + mountain) * smoothPlateau * cityFlatten - lakeCarve
+  }
+
+  /**
+   * Walkable surface height including the stepped Central Sanctuary Dais and downtown NTE sidewalks.
+   */
+  fun walkableWorldHeight(x: Float, z: Float): Float {
+    var h = openWorldHeight(x, z)
+    val distFromCenter = sqrt(x * x + z * z)
+    // Stepped circular Sanctuary Dais at origin (radius 9.5m, height 0.55m)
+    if (distFromCenter < 9.6f) {
+      val daisLift = (1f - smoothstep(7.8f, 9.6f, distFromCenter)) * 0.55f
+      h = max(h, daisLift)
+    }
+    // Raised NTE downtown pedestrian sidewalks flanking the asphalt intersection
+    val ax = kotlin.math.abs(x)
+    if (z in -56f..-20f && ax in 4.3f..15.5f && z !in -33.2f..-24.8f) {
+      h = max(h, 0.22f)
+    }
+    return h
   }
 
   fun openWorldNormal(x: Float, z: Float): FloatArray {
@@ -110,5 +134,31 @@ object Math3D {
     val nz = hD - hU
     val len = sqrt(nx * nx + ny * ny + nz * nz).coerceAtLeast(0.0001f)
     return floatArrayOf(nx / len, ny / len, nz / len)
+  }
+
+  /**
+   * Resolves horizontal circle-vs-circle collisions against pillars, arches, and bosses.
+   */
+  fun resolveObstacles(
+    x: Float,
+    z: Float,
+    playerRadius: Float,
+    obstacles: List<CylinderObstacle>,
+  ): Pair<Float, Float> {
+    var px = x
+    var pz = z
+    for (obs in obstacles) {
+      val dx = px - obs.x
+      val dz = pz - obs.z
+      val minDist = playerRadius + obs.radius
+      val d2 = dx * dx + dz * dz
+      if (d2 < minDist * minDist) {
+        val d = sqrt(d2).coerceAtLeast(0.0001f)
+        val push = minDist - d
+        px += (dx / d) * push
+        pz += (dz / d) * push
+      }
+    }
+    return px to pz
   }
 }

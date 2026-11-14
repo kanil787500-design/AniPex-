@@ -36,12 +36,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +64,8 @@ import com.example.R
 import com.example.data.GameCatalog
 import com.example.data.HeroProgression
 import com.example.data.PlayerProfile
+import com.example.ui.shader.CelShaderPreset
+import com.example.ui.shader.animeCelLighting
 import com.example.ui.theme.AstralCyan
 import com.example.ui.theme.AstralGold
 import com.example.ui.theme.AstralNight
@@ -89,6 +94,7 @@ fun CharacterProgressionOverlay(
     mutableStateOf(profile?.activeHeroId ?: "kaelen")
   }
   var selectedTab by remember { mutableIntStateOf(0) }
+  var celLightAzimuth by remember { mutableFloatStateOf(viewModel.worldState.celLightAzimuthDeg) }
 
   val heroProg = heroes.firstOrNull { it.heroId == selectedHeroId } ?: heroes.firstOrNull()
   val arch = GameCatalog.heroById(selectedHeroId)
@@ -155,7 +161,16 @@ fun CharacterProgressionOverlay(
                   painter = painterResource(heroDrawableRes(h.id)),
                   contentDescription = h.name,
                   contentScale = ContentScale.Crop,
-                  modifier = Modifier.size(44.dp).clip(CircleShape),
+                  modifier =
+                    Modifier.size(44.dp)
+                      .clip(CircleShape)
+                      .animeCelLighting(
+                        preset = CelShaderPreset.CHARACTER,
+                        rimColor = Color(h.primaryColorHex),
+                        lightAzimuthDeg = celLightAzimuth,
+                        rimStrength = 0.72f,
+                        outlineStrength = 0.50f,
+                      ),
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -181,12 +196,57 @@ fun CharacterProgressionOverlay(
               border = BorderStroke(1.dp, elemColor.copy(alpha = 0.45f)),
               modifier = Modifier.fillMaxWidth(),
             ) {
-              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("${arch.name} — ${arch.title}", style = MaterialTheme.typography.titleMedium, color = Color.White)
+              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                  Image(
+                    painter = painterResource(heroDrawableRes(arch.id)),
+                    contentDescription = "${arch.name} cel-shaded portrait",
+                    contentScale = ContentScale.Crop,
+                    modifier =
+                      Modifier.size(64.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .animeCelLighting(
+                          preset = CelShaderPreset.CHARACTER,
+                          rimColor = elemColor,
+                          lightAzimuthDeg = celLightAzimuth,
+                          celBands = 3f,
+                          rimStrength = 0.88f,
+                          outlineStrength = 0.62f,
+                          animateRimPulse = true,
+                        )
+                        .testTag("cel_shader_hero_preview"),
+                  )
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text("${arch.name} — ${arch.title}", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text(
+                      "PWR ${stats.combatPower}  •  Tier ${heroProg.ascensionTier}  •  ATK ${stats.attack}  •  HP ${stats.maxHp}",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = elemColor,
+                    )
+                  }
+                }
                 Text(
-                  "PWR ${stats.combatPower}  •  Tier ${heroProg.ascensionTier}  •  ATK ${stats.attack}  •  HP ${stats.maxHp}",
+                  "Cel Rim Light Angle: ${celLightAzimuth.toInt()}°",
                   style = MaterialTheme.typography.labelSmall,
-                  color = elemColor,
+                  color = Color.White.copy(alpha = 0.8f),
+                )
+                Slider(
+                  value = celLightAzimuth,
+                  onValueChange = { angle ->
+                    celLightAzimuth = angle
+                    viewModel.worldState.celLightAzimuthDeg = angle
+                  },
+                  valueRange = 0f..360f,
+                  colors =
+                    SliderDefaults.colors(
+                      thumbColor = elemColor,
+                      activeTrackColor = elemColor,
+                      inactiveTrackColor = Color.White.copy(alpha = 0.16f),
+                    ),
+                  modifier = Modifier.fillMaxWidth().height(28.dp).testTag("cel_light_azimuth_slider"),
                 )
                 if (profile?.activeHeroId != arch.id) {
                   Button(

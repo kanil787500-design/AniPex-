@@ -55,6 +55,8 @@ import com.example.data.GameCatalog
 import com.example.data.PlayerProfile
 import com.example.data.RaidMember
 import com.example.data.RaidRoom
+import com.example.ui.shader.CelShaderPreset
+import com.example.ui.shader.animeCelLighting
 import com.example.ui.theme.AstralCryo
 import com.example.ui.theme.AstralCyan
 import com.example.ui.theme.AstralGold
@@ -114,7 +116,17 @@ fun WorldMapOverlay(
           color = Color(0xFF102238),
           shape = RoundedCornerShape(18.dp),
           border = BorderStroke(1.dp, AstralCyan.copy(alpha = 0.4f)),
-          modifier = Modifier.weight(0.48f).fillMaxSize(),
+          modifier =
+            Modifier.weight(0.48f)
+              .fillMaxSize()
+              .clip(RoundedCornerShape(18.dp))
+              .animeCelLighting(
+                preset = CelShaderPreset.ENVIRONMENT,
+                rimColor = AstralCyan,
+                lightAzimuthDeg = viewModel.worldState.celLightAzimuthDeg,
+                rimStrength = 0.55f,
+                outlineStrength = 0.35f,
+              ),
         ) {
           Canvas(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             val mapSpan = 120f
@@ -285,7 +297,16 @@ fun RaidHubOverlay(
                     painter = painterResource(heroDrawableRes(m.heroId)),
                     contentDescription = m.displayName,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(38.dp).clip(CircleShape),
+                    modifier =
+                      Modifier.size(38.dp)
+                        .clip(CircleShape)
+                        .animeCelLighting(
+                          preset = CelShaderPreset.CHARACTER,
+                          rimColor = Color(GameCatalog.heroById(m.heroId).primaryColorHex),
+                          lightAzimuthDeg = viewModel.worldState.celLightAzimuthDeg,
+                          rimStrength = 0.70f,
+                          outlineStrength = 0.45f,
+                        ),
                   )
                   Spacer(Modifier.width(10.dp))
                   Column(modifier = Modifier.weight(1f)) {

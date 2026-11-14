@@ -13,6 +13,7 @@ import com.example.data.RaidRoom
 import com.example.engine3d.GameInputCommand
 import com.example.engine3d.GameWorldState
 import com.example.engine3d.HudSnapshot
+import com.example.engine3d.NpcDialogueInfo
 import com.example.engine3d.WorldMode
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -58,6 +59,9 @@ class GameViewModel(
 
   private val _bannerMessage = MutableStateFlow<String?>(null)
   val bannerMessage: StateFlow<String?> = _bannerMessage.asStateFlow()
+
+  private val _activeNpcDialogue = MutableStateFlow<NpcDialogueInfo?>(null)
+  val activeNpcDialogue: StateFlow<NpcDialogueInfo?> = _activeNpcDialogue.asStateFlow()
 
   private val _activeRaidRoomId = MutableStateFlow<String?>(null)
   val activeRaidRoomId: StateFlow<String?> = _activeRaidRoomId.asStateFlow()
@@ -259,8 +263,16 @@ class GameViewModel(
     _activeOverlay.value = panel
   }
 
+  fun showBanner(message: String) {
+    _bannerMessage.value = message
+  }
+
   fun clearBanner() {
     _bannerMessage.value = null
+  }
+
+  fun dismissNpcDialogue() {
+    _activeNpcDialogue.value = null
   }
 
   fun sendCommand(cmd: GameInputCommand) {
@@ -280,9 +292,26 @@ class GameViewModel(
 
   fun interactNearby() {
     val target = _hudSnapshot.value.nearbyTarget ?: return
+    if (target.type == "npc") {
+      val npc = worldState.npcs.firstOrNull { it.id == target.id } ?: return
+      _activeNpcDialogue.value =
+        NpcDialogueInfo(
+          npcId = npc.id,
+          name = npc.name,
+          role = npc.role,
+          line = npc.greeting,
+          benefitLabel = npc.benefitLabel,
+        )
+      worldState.commandQueue.offer(GameInputCommand.ApplyNpcBenefit(npc.rewardType))
+      _bannerMessage.value = "${npc.name}: ${npc.benefitLabel}"
+      return
+    }
+    if (target.type == "raid_portal") {
+      _activeOverlay.value = OverlayPanel.RAID_HUB
+      return
+    }
     val profile = (profileState.value as? UiState.Success)?.data ?: return
     when (target.type) {
-      "raid_portal" -> _activeOverlay.value = OverlayPanel.RAID_HUB
       "waypoint" ->
         viewModelScope.launch {
           val res = repository.unlockWaypoint(target.id, profile)

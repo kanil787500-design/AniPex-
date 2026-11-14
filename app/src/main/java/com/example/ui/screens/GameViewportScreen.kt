@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.opengl.GLSurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -12,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -40,10 +40,12 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SportsMartialArts
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -85,8 +87,11 @@ import com.example.data.PlayerProfile
 import com.example.data.RaidRoom
 import com.example.engine3d.AetherRenderer
 import com.example.engine3d.GameInputCommand
+import com.example.engine3d.GraphicsQualityTier
 import com.example.engine3d.HudSnapshot
 import com.example.engine3d.WorldMode
+import com.example.ui.shader.CelShaderPreset
+import com.example.ui.shader.animeCelLighting
 import com.example.ui.theme.AstralCryo
 import com.example.ui.theme.AstralCyan
 import com.example.ui.theme.AstralGold
@@ -117,13 +122,30 @@ fun GameViewportScreen(
   val hud by viewModel.hudSnapshot.collectAsStateWithLifecycle()
   val activeOverlay by viewModel.activeOverlay.collectAsStateWithLifecycle()
   val bannerMessage by viewModel.bannerMessage.collectAsStateWithLifecycle()
+  val activeNpcDialogue by viewModel.activeNpcDialogue.collectAsStateWithLifecycle()
 
   val profile = (profileState as? UiState.Success)?.data
   val heroes = (heroesState as? UiState.Success)?.data ?: emptyList()
+  var qualityTier by remember { mutableStateOf(viewModel.worldState.graphicsQuality) }
+  var cinemaMode by remember { mutableStateOf(viewModel.worldState.cinematicMode) }
+  val letterboxHeight by animateDpAsState(targetValue = if (cinemaMode) 22.dp else 0.dp, label = "cinemaLetterbox")
 
-  // Dismiss secondary overlays on system Back button
+  // Dismiss secondary overlays & NPC dialogue on system Back button
   BackHandler(enabled = activeOverlay != OverlayPanel.NONE) {
     viewModel.setOverlay(OverlayPanel.NONE)
+  }
+  BackHandler(enabled = activeOverlay == OverlayPanel.NONE && activeNpcDialogue != null) {
+    viewModel.dismissNpcDialogue()
+  }
+
+  LaunchedEffect(activeNpcDialogue, hud.playerX, hud.playerZ) {
+    val dlg = activeNpcDialogue ?: return@LaunchedEffect
+    val npc = viewModel.worldState.npcs.firstOrNull { it.id == dlg.npcId } ?: return@LaunchedEffect
+    val dx = hud.playerX - npc.x
+    val dz = hud.playerZ - npc.z
+    if (dx * dx + dz * dz > 30f) {
+      viewModel.dismissNpcDialogue()
+    }
   }
 
   LaunchedEffect(bannerMessage) {
@@ -136,6 +158,7 @@ fun GameViewportScreen(
   val glView = remember {
     GLSurfaceView(context).apply {
       setEGLContextClientVersion(3)
+      setEGLConfigChooser(8, 8, 8, 8, 24, 0)
       setRenderer(AetherRenderer(viewModel.worldState))
       renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
     }
@@ -152,6 +175,16 @@ fun GameViewportScreen(
       factory = { glView },
       modifier = Modifier.fillMaxSize(),
     )
+
+    // Cinematic Widescreen Matte Bars when Cinema Mode is enabled
+    if (letterboxHeight > 0.5.dp) {
+      Box(
+        modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().height(letterboxHeight).background(Color.Black.copy(alpha = 0.78f))
+      )
+      Box(
+        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(letterboxHeight).background(Color.Black.copy(alpha = 0.78f))
+      )
+    }
 
     // 2. Dual-Zone Full Finger Touch Control Surface (Left Thumbstick + Right 360 Orbit & Pinch Zoom)
     var joystickOrigin by remember { mutableStateOf<Offset?>(null) }
@@ -201,44 +234,76 @@ fun GameViewportScreen(
             }
       )
 
-      // Right 58% -> 360-degree Camera Orbit Drag + Two-Finger Pinch-to-Zoom
+      // Right 58% -> Instant Zero-Slop 360 Camera Orbit Drag + Two-Finger Pinch-to-Zoom
       Box(
         modifier =
           Modifier.fillMaxHeight()
             .weight(1f)
             .pointerInput(Unit) {
-              detectTransformGestures { _, pan, zoom, _ ->
-                viewModel.worldState.camYaw =
-                  (viewModel.worldState.camYaw - pan.x * 0.24f) % 360f
-                viewModel.worldState.camPitch =
-                  (viewModel.worldState.camPitch + pan.y * 0.18f).coerceIn(-8f, 65f)
-                if (zoom != 1f) {
-                  viewModel.worldState.camDistance =
-                    (viewModel.worldState.camDistance / zoom).coerceIn(4.4f, 14.5f)
-                }
+              awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                var prevCentroid: Offset? = null
+                var prevSpan: Float? = null
+                do {
+                  val event = awaitPointerEvent()
+                  val pressed = event.changes.filter { it.pressed }
+                  if (pressed.isEmpty()) break
+
+                  val centroid =
+                    pressed.fold(Offset.Zero) { acc, c -> acc + c.position } / pressed.size.toFloat()
+                  val prevC = prevCentroid
+                  if (prevC != null) {
+                    val pan = centroid - prevC
+                    viewModel.worldState.camYaw =
+                      (viewModel.worldState.camYaw - pan.x * 0.28f) % 360f
+                    viewModel.worldState.camPitch =
+                      (viewModel.worldState.camPitch + pan.y * 0.20f).coerceIn(-8f, 65f)
+                  }
+                  prevCentroid = centroid
+
+                  if (pressed.size >= 2) {
+                    val p0 = pressed[0].position
+                    val p1 = pressed[1].position
+                    val dx = p0.x - p1.x
+                    val dy = p0.y - p1.y
+                    val span = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                    val lastSpan = prevSpan
+                    if (lastSpan != null && lastSpan > 1f) {
+                      val zoom = span / lastSpan
+                      viewModel.worldState.camDistance =
+                        (viewModel.worldState.camDistance / zoom).coerceIn(3.2f, 15.0f)
+                    }
+                    prevSpan = span
+                  } else {
+                    prevSpan = null
+                  }
+                } while (true)
               }
             }
       )
     }
 
-    // Floating Joystick Visual Indicator
+    // Floating Joystick Visual Indicator (Cyan = Walk/Run, Gold = Sprint)
     val jOrigin = joystickOrigin
     val jKnob = joystickKnob
     if (jOrigin != null && jKnob != null) {
+      val delta = jKnob - jOrigin
+      val pullFrac = (sqrt(delta.x * delta.x + delta.y * delta.y) / stickMaxRadiusPx).coerceIn(0f, 1f)
+      val ringColor = if (pullFrac > 0.82f) AstralGold else AstralCyan
       Canvas(modifier = Modifier.fillMaxSize()) {
         drawCircle(
-          color = Color.White.copy(alpha = 0.16f),
+          color = Color.White.copy(alpha = 0.14f),
           radius = stickMaxRadiusPx,
           center = jOrigin,
         )
         drawCircle(
-          color = AstralCyan.copy(alpha = 0.65f),
+          color = ringColor.copy(alpha = 0.75f),
           radius = stickMaxRadiusPx,
           center = jOrigin,
-          style = Stroke(width = 3f),
+          style = Stroke(width = if (pullFrac > 0.82f) 4f else 3f),
         )
         drawCircle(
-          color = AstralCyan.copy(alpha = 0.85f),
+          color = ringColor.copy(alpha = 0.88f),
           radius = stickMaxRadiusPx * 0.36f,
           center = jKnob,
         )
@@ -360,7 +425,84 @@ fun GameViewportScreen(
         horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+          val tierTint =
+            when (qualityTier) {
+              GraphicsQualityTier.ULTRA_3X -> AstralGold
+              GraphicsQualityTier.HIGH_2X -> AstralCyan
+              GraphicsQualityTier.STANDARD_1X -> Color.White.copy(alpha = 0.78f)
+            }
+          Surface(
+            color = AstralNight.copy(alpha = 0.80f),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.5.dp, tierTint.copy(alpha = 0.72f)),
+            modifier =
+              Modifier.height(48.dp)
+                .clickable {
+                  val next =
+                    when (qualityTier) {
+                      GraphicsQualityTier.ULTRA_3X -> GraphicsQualityTier.HIGH_2X
+                      GraphicsQualityTier.HIGH_2X -> GraphicsQualityTier.STANDARD_1X
+                      GraphicsQualityTier.STANDARD_1X -> GraphicsQualityTier.ULTRA_3X
+                    }
+                  qualityTier = next
+                  viewModel.worldState.graphicsQuality = next
+                  viewModel.showBanner("Graphics Mod: ${next.label} (${next.scale}x)")
+                }
+                .testTag("graphics_quality_btn"),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 10.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+              Icon(
+                Icons.Default.HighQuality,
+                contentDescription = "Cycle Graphics Quality Mod (${qualityTier.label})",
+                tint = tierTint,
+                modifier = Modifier.size(18.dp),
+              )
+              Text(
+                qualityTier.label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = tierTint,
+              )
+            }
+          }
+          val cinemaTint = if (cinemaMode) Color(0xFFFF98BA) else Color.White.copy(alpha = 0.78f)
+          Surface(
+            color = if (cinemaMode) Color(0xCC241226) else AstralNight.copy(alpha = 0.80f),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(if (cinemaMode) 1.5.dp else 1.dp, cinemaTint.copy(alpha = if (cinemaMode) 0.85f else 0.45f)),
+            modifier =
+              Modifier.height(48.dp)
+                .clickable {
+                  cinemaMode = !cinemaMode
+                  viewModel.worldState.cinematicMode = cinemaMode
+                  viewModel.showBanner(if (cinemaMode) "Cinematic Camera & Filmic Grading ON" else "Standard Exploration Camera")
+                }
+                .testTag("cinematic_mode_btn"),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 10.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+              Icon(
+                Icons.Default.Videocam,
+                contentDescription = if (cinemaMode) "Disable Cinematic Mode" else "Enable Cinematic Mode",
+                tint = cinemaTint,
+                modifier = Modifier.size(18.dp),
+              )
+              Text(
+                "CINEMA",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = cinemaTint,
+              )
+            }
+          }
           HudTopIconButton(
             icon = Icons.Default.Person,
             label = "Heroes",
@@ -401,7 +543,16 @@ fun GameViewportScreen(
                   painter = painterResource(heroDrawableRes(m.heroId)),
                   contentDescription = m.displayName,
                   contentScale = ContentScale.Crop,
-                  modifier = Modifier.size(28.dp).clip(CircleShape),
+                  modifier =
+                    Modifier.size(28.dp)
+                      .clip(CircleShape)
+                      .animeCelLighting(
+                        preset = CelShaderPreset.CHARACTER,
+                        rimColor = Color(GameCatalog.heroById(m.heroId).primaryColorHex),
+                        lightAzimuthDeg = viewModel.worldState.celLightAzimuthDeg,
+                        rimStrength = 0.65f,
+                        outlineStrength = 0.40f,
+                      ),
                 )
               }
             }
@@ -433,7 +584,18 @@ fun GameViewportScreen(
                     painter = painterResource(heroDrawableRes(arch.id)),
                     contentDescription = "Switch to ${arch.name}",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(26.dp).clip(CircleShape),
+                    modifier =
+                      Modifier.size(26.dp)
+                        .clip(CircleShape)
+                        .animeCelLighting(
+                          preset = CelShaderPreset.CHARACTER,
+                          rimColor = elemColor,
+                          lightAzimuthDeg = viewModel.worldState.celLightAzimuthDeg,
+                          rimStrength = if (isActive) {
+                            if (qualityTier == GraphicsQualityTier.ULTRA_3X) 0.96f else 0.85f
+                          } else 0.45f,
+                          outlineStrength = if (qualityTier == GraphicsQualityTier.ULTRA_3X) 0.54f else 0.42f,
+                        ),
                   )
                 }
               }
@@ -442,18 +604,64 @@ fun GameViewportScreen(
         }
       }
 
-      // BOTTOM-CENTER: Player HP + Stamina Bar + Interactive Prompt
+      // BOTTOM-CENTER: NPC Dialogue Card + Interactive Prompt + Player HP/Stamina Bar
       Column(
         modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
+        val dlg = activeNpcDialogue
+        if (dlg != null) {
+          Surface(
+            color = Color(0xEA0C1428),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.5.dp, AstralCyan.copy(alpha = 0.72f)),
+            modifier = Modifier.padding(bottom = 8.dp).width(340.dp).testTag("npc_dialogue_card"),
+          ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Text(dlg.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = AstralGold)
+                  Surface(
+                    color = AstralCyan.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, AstralCyan.copy(alpha = 0.45f)),
+                  ) {
+                    Text(
+                      dlg.role,
+                      style = MaterialTheme.typography.labelSmall,
+                      color = AstralCyan,
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                  }
+                }
+                Text(
+                  "Close",
+                  style = MaterialTheme.typography.labelSmall,
+                  fontWeight = FontWeight.Bold,
+                  color = Color.White.copy(alpha = 0.85f),
+                  modifier =
+                    Modifier.clickable { viewModel.dismissNpcDialogue() }
+                      .padding(horizontal = 6.dp, vertical = 4.dp)
+                      .testTag("npc_dialogue_close_btn"),
+                )
+              }
+              Text(dlg.line, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.94f))
+              Text("Bonus Applied: ${dlg.benefitLabel}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = Color(0xFF6EF5B2))
+            }
+          }
+        }
+
         val nearby = hud.nearbyTarget
-        if (nearby != null) {
+        if (nearby != null && dlg == null) {
           Button(
             onClick = { viewModel.interactNearby() },
             colors = ButtonDefaults.buttonColors(containerColor = AstralGold, contentColor = AstralNight),
             shape = RoundedCornerShape(50),
-            modifier = Modifier.padding(bottom = 8.dp).height(42.dp).testTag("interact_prompt_btn"),
+            modifier = Modifier.padding(bottom = 8.dp).height(48.dp).testTag("interact_prompt_btn"),
           ) {
             Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
@@ -671,7 +879,17 @@ private fun MiniRadarDisc(
     color = Color(0xCC0D182F),
     shape = CircleShape,
     border = BorderStroke(2.dp, AstralCyan.copy(alpha = 0.65f)),
-    modifier = Modifier.size(64.dp).clip(CircleShape).clickable(onClick = onClick).testTag("mini_radar_btn"),
+    modifier =
+      Modifier.size(64.dp)
+        .clip(CircleShape)
+        .animeCelLighting(
+          preset = CelShaderPreset.ENVIRONMENT,
+          rimColor = AstralCyan,
+          rimStrength = 0.50f,
+          outlineStrength = 0.30f,
+        )
+        .clickable(onClick = onClick)
+        .testTag("mini_radar_btn"),
   ) {
     Canvas(modifier = Modifier.fillMaxSize().padding(6.dp)) {
       val c = Offset(size.width / 2f, size.height / 2f)

@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import com.example.R
 import com.example.auth.GoogleAuthHelper
+import com.example.ui.shader.CelShaderPreset
+import com.example.ui.shader.animeCelLighting
 import com.example.ui.theme.AstralCyan
 import com.example.ui.theme.AstralGold
 import com.example.ui.theme.AstralNight
@@ -103,7 +105,17 @@ fun AuthScreen(
       painter = painterResource(id = R.drawable.title_splash_art_1794649197942),
       contentDescription = "Aetherbound cel-shaded anime open world vista",
       contentScale = ContentScale.Crop,
-      modifier = Modifier.fillMaxSize(),
+      modifier =
+        Modifier.fillMaxSize()
+          .animeCelLighting(
+            preset = CelShaderPreset.ENVIRONMENT,
+            rimColor = AstralCyan,
+            lightAzimuthDeg = 35f,
+            celBands = 3f,
+            rimStrength = 0.58f,
+            outlineStrength = 0.32f,
+            animateRimPulse = true,
+          ),
     )
 
     Box(
