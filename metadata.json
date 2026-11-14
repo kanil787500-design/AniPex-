@@ -1,0 +1,6 @@
+{
+  "name": "Aetherbound",
+  "description": "3D cel-shaded anime open-world action RPG with full touch camera & combat controls, real-time multiplayer dungeon raids, and deep character progression.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

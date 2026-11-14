@@ -1,0 +1,142 @@
+{
+  "entities": {
+    "PlayerProfile": {
+      "title": "PlayerProfile",
+      "description": "Authenticated adventurer account profile, exploration progress, and currencies.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the player." },
+        "displayName": { "type": "string", "description": "Adventurer display name." },
+        "adventureRank": { "type": "integer", "description": "Adventure Rank level (1-60)." },
+        "adventureXp": { "type": "integer", "description": "Accumulated Adventure XP." },
+        "starlightGems": { "type": "integer", "description": "Premium progression gems earned from chests and raids." },
+        "mora": { "type": "integer", "description": "Primary upgrade currency." },
+        "expTomes": { "type": "integer", "description": "Hero leveling XP materials." },
+        "bossCores": { "type": "integer", "description": "Ascension & talent materials dropped by raid bosses." },
+        "activeHeroId": { "type": "string", "enum": ["kaelen", "lyra", "seraphina"], "description": "Currently active field hero." },
+        "unlockedWaypoints": { "type": "array", "description": "IDs of activated open-world Teleport Waypoints (max 10)." },
+        "openedChests": { "type": "array", "description": "IDs of looted open-world Astral Chests (max 20)." },
+        "raidsCleared": { "type": "integer", "description": "Total multiplayer raid victories." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": [
+        "userId", "displayName", "adventureRank", "adventureXp",
+        "starlightGems", "mora", "expTomes", "bossCores",
+        "activeHeroId", "unlockedWaypoints", "openedChests", "raidsCleared",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "HeroProgression": {
+      "title": "HeroProgression",
+      "description": "Deep RPG progression state for a playable anime hero.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "heroId": { "type": "string", "enum": ["kaelen", "lyra", "seraphina"], "description": "Hero identifier." },
+        "level": { "type": "integer", "description": "Hero level (1-90)." },
+        "ascensionTier": { "type": "integer", "description": "Ascension phase (0-6)." },
+        "xp": { "type": "integer", "description": "Current level XP." },
+        "constellationLevel": { "type": "integer", "description": "Unlocked constellation nodes (0-6)." },
+        "talentNormalLv": { "type": "integer", "description": "Normal attack talent level (1-10)." },
+        "talentSkillLv": { "type": "integer", "description": "Elemental skill talent level (1-10)." },
+        "talentBurstLv": { "type": "integer", "description": "Elemental burst talent level (1-10)." },
+        "weaponId": { "type": "string", "description": "Equipped weapon ID." },
+        "weaponLevel": { "type": "integer", "description": "Weapon upgrade level (1-90)." },
+        "weaponRefinement": { "type": "integer", "description": "Weapon refinement rank (1-5)." },
+        "artifactFlowerLv": { "type": "integer", "description": "Flower artifact level (0-20)." },
+        "artifactFeatherLv": { "type": "integer", "description": "Feather artifact level (0-20)." },
+        "artifactSandsLv": { "type": "integer", "description": "Sands artifact level (0-20)." },
+        "artifactGobletLv": { "type": "integer", "description": "Goblet artifact level (0-20)." },
+        "artifactCircletLv": { "type": "integer", "description": "Circlet artifact level (0-20)." },
+        "equippedSet": { "type": "string", "description": "Active artifact set name." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": [
+        "userId", "heroId", "level", "ascensionTier", "xp", "constellationLevel",
+        "talentNormalLv", "talentSkillLv", "talentBurstLv",
+        "weaponId", "weaponLevel", "weaponRefinement",
+        "artifactFlowerLv", "artifactFeatherLv", "artifactSandsLv", "artifactGobletLv", "artifactCircletLv",
+        "equippedSet", "createdAt", "updatedAt"
+      ]
+    },
+    "RaidRoom": {
+      "title": "RaidRoom",
+      "description": "Multiplayer dungeon raid lobby and shared boss encounter state.",
+      "type": "object",
+      "properties": {
+        "hostUserId": { "type": "string", "description": "UID of the party leader." },
+        "hostName": { "type": "string", "description": "Display name of the host." },
+        "dungeonId": { "type": "string", "enum": ["sanctum_storms", "crimson_forge", "glacial_throne"], "description": "Dungeon arena ID." },
+        "dungeonName": { "type": "string", "description": "Dungeon display name." },
+        "difficulty": { "type": "string", "enum": ["Normal", "Heroic", "Abyssal"], "description": "Raid difficulty tier." },
+        "status": { "type": "string", "enum": ["waiting", "active", "cleared", "failed"], "description": "Raid lifecycle status." },
+        "bossName": { "type": "string", "description": "Name of the raid boss." },
+        "bossElement": { "type": "string", "enum": ["Aero", "Pyro", "Cryo"], "description": "Elemental affinity of the boss." },
+        "bossHp": { "type": "integer", "description": "Remaining boss HP." },
+        "bossMaxHp": { "type": "integer", "description": "Maximum boss HP." },
+        "bossShield": { "type": "integer", "description": "Remaining elemental shield." },
+        "bossMaxShield": { "type": "integer", "description": "Maximum elemental shield." },
+        "phase": { "type": "integer", "description": "Boss combat phase (1-3)." },
+        "memberUids": { "type": "array", "description": "UIDs of joined raiders (1-4)." },
+        "memberCount": { "type": "integer", "description": "Current raider count (1-4)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": [
+        "hostUserId", "hostName", "dungeonId", "dungeonName", "difficulty",
+        "status", "bossName", "bossElement", "bossHp", "bossMaxHp",
+        "bossShield", "bossMaxShield", "phase", "memberUids", "memberCount",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "RaidMember": {
+      "title": "RaidMember",
+      "description": "Real-time co-op raider avatar transform, HP, and damage contribution.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the raider." },
+        "roomId": { "type": "string", "description": "Parent raid room ID." },
+        "displayName": { "type": "string", "description": "Raider display name." },
+        "heroId": { "type": "string", "enum": ["kaelen", "lyra", "seraphina"], "description": "Active raid hero." },
+        "heroLevel": { "type": "integer", "description": "Hero level (1-90)." },
+        "combatPower": { "type": "integer", "description": "Computed combat power rating." },
+        "posX": { "type": "number", "description": "Arena X coordinate." },
+        "posY": { "type": "number", "description": "Arena Y coordinate." },
+        "posZ": { "type": "number", "description": "Arena Z coordinate." },
+        "yaw": { "type": "number", "description": "Character facing angle in degrees." },
+        "hp": { "type": "integer", "description": "Current raider HP." },
+        "maxHp": { "type": "integer", "description": "Maximum raider HP." },
+        "damageDealt": { "type": "integer", "description": "Total damage dealt to the boss." },
+        "isReady": { "type": "boolean", "description": "Lobby ready check flag." },
+        "lastAction": { "type": "string", "description": "Recent combat action tag for remote animation." },
+        "memberUids": { "type": "array", "description": "Denormalized room member UIDs (max 4)." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": [
+        "userId", "roomId", "displayName", "heroId", "heroLevel", "combatPower",
+        "posX", "posY", "posZ", "yaw", "hp", "maxHp", "damageDealt",
+        "isReady", "lastAction", "memberUids", "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/PlayerProfile" },
+      "description": "Per-user player progression, currencies, and open-world discovery records."
+    },
+    "/users/{userId}/heroes/{heroId}": {
+      "schema": { "$ref": "#/entities/HeroProgression" },
+      "description": "Deep hero progression (levels, constellations, talents, weapons, artifacts)."
+    },
+    "/raidRooms/{roomId}": {
+      "schema": { "$ref": "#/entities/RaidRoom" },
+      "description": "Multiplayer raid lobbies and shared real-time boss encounters."
+    },
+    "/raidRooms/{roomId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/RaidMember" },
+      "description": "Real-time co-op party member positions, animations, and damage contributions."
+    }
+  }
+}

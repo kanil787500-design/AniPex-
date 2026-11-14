@@ -1,0 +1,328 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HARDENED HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidHeroId(h) {
+      return h in ['kaelen', 'lyra', 'seraphina'];
+    }
+
+    function isValidStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    // --- ENTITY VALIDATION HELPERS ---
+    function isValidPlayerProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 40 &&
+             data.adventureRank is int && data.adventureRank >= 1 && data.adventureRank <= 60 &&
+             data.adventureXp is int && data.adventureXp >= 0 && data.adventureXp <= 10000000 &&
+             data.starlightGems is int && data.starlightGems >= 0 && data.starlightGems <= 10000000 &&
+             data.mora is int && data.mora >= 0 && data.mora <= 999999999 &&
+             data.expTomes is int && data.expTomes >= 0 && data.expTomes <= 999999 &&
+             data.bossCores is int && data.bossCores >= 0 && data.bossCores <= 999999 &&
+             isValidHeroId(data.activeHeroId) &&
+             isValidStringList(data.unlockedWaypoints, 10) &&
+             isValidStringList(data.openedChests, 20) &&
+             data.raidsCleared is int && data.raidsCleared >= 0 && data.raidsCleared <= 999999;
+    }
+
+    function isValidHeroProgression(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             isValidHeroId(data.heroId) &&
+             data.level is int && data.level >= 1 && data.level <= 90 &&
+             data.ascensionTier is int && data.ascensionTier >= 0 && data.ascensionTier <= 6 &&
+             data.xp is int && data.xp >= 0 && data.xp <= 10000000 &&
+             data.constellationLevel is int && data.constellationLevel >= 0 && data.constellationLevel <= 6 &&
+             data.talentNormalLv is int && data.talentNormalLv >= 1 && data.talentNormalLv <= 10 &&
+             data.talentSkillLv is int && data.talentSkillLv >= 1 && data.talentSkillLv <= 10 &&
+             data.talentBurstLv is int && data.talentBurstLv >= 1 && data.talentBurstLv <= 10 &&
+             data.weaponId is string && data.weaponId.size() >= 1 && data.weaponId.size() <= 50 &&
+             data.weaponLevel is int && data.weaponLevel >= 1 && data.weaponLevel <= 90 &&
+             data.weaponRefinement is int && data.weaponRefinement >= 1 && data.weaponRefinement <= 5 &&
+             data.artifactFlowerLv is int && data.artifactFlowerLv >= 0 && data.artifactFlowerLv <= 20 &&
+             data.artifactFeatherLv is int && data.artifactFeatherLv >= 0 && data.artifactFeatherLv <= 20 &&
+             data.artifactSandsLv is int && data.artifactSandsLv >= 0 && data.artifactSandsLv <= 20 &&
+             data.artifactGobletLv is int && data.artifactGobletLv >= 0 && data.artifactGobletLv <= 20 &&
+             data.artifactCircletLv is int && data.artifactCircletLv >= 0 && data.artifactCircletLv <= 20 &&
+             data.equippedSet is string && data.equippedSet.size() >= 1 && data.equippedSet.size() <= 50;
+    }
+
+    function isValidRaidRoom(data) {
+      return data.hostUserId is string && data.hostUserId.size() >= 1 && data.hostUserId.size() <= 128 &&
+             data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 40 &&
+             data.dungeonId in ['sanctum_storms', 'crimson_forge', 'glacial_throne'] &&
+             data.dungeonName is string && data.dungeonName.size() >= 1 && data.dungeonName.size() <= 60 &&
+             data.difficulty in ['Normal', 'Heroic', 'Abyssal'] &&
+             data.status in ['waiting', 'active', 'cleared', 'failed'] &&
+             data.bossName is string && data.bossName.size() >= 1 && data.bossName.size() <= 60 &&
+             data.bossElement in ['Aero', 'Pyro', 'Cryo'] &&
+             data.bossHp is int && data.bossHp >= 0 && data.bossHp <= 5000000 &&
+             data.bossMaxHp is int && data.bossMaxHp >= 1000 && data.bossMaxHp <= 5000000 &&
+             data.bossHp <= data.bossMaxHp &&
+             data.bossShield is int && data.bossShield >= 0 && data.bossShield <= 500000 &&
+             data.bossMaxShield is int && data.bossMaxShield >= 100 && data.bossMaxShield <= 500000 &&
+             data.phase is int && data.phase >= 1 && data.phase <= 3 &&
+             isValidStringList(data.memberUids, 4) && data.memberUids.size() >= 1 &&
+             data.memberCount is int && data.memberCount >= 1 && data.memberCount <= 4 &&
+             data.memberCount == data.memberUids.size();
+    }
+
+    function isValidRaidMember(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 40 &&
+             isValidHeroId(data.heroId) &&
+             data.heroLevel is int && data.heroLevel >= 1 && data.heroLevel <= 90 &&
+             data.combatPower is int && data.combatPower >= 0 && data.combatPower <= 9999999 &&
+             data.posX is number && data.posX >= -500 && data.posX <= 500 &&
+             data.posY is number && data.posY >= -100 && data.posY <= 500 &&
+             data.posZ is number && data.posZ >= -500 && data.posZ <= 500 &&
+             data.yaw is number && data.yaw >= -720 && data.yaw <= 720 &&
+             data.hp is int && data.hp >= 0 && data.hp <= 1000000 &&
+             data.maxHp is int && data.maxHp >= 1 && data.maxHp <= 1000000 &&
+             data.damageDealt is int && data.damageDealt >= 0 && data.damageDealt <= 99999999 &&
+             data.isReady is bool &&
+             data.lastAction is string && data.lastAction.size() <= 40 &&
+             isValidStringList(data.memberUids, 4) && data.memberUids.size() >= 1;
+    }
+
+    // --- COLLECTION RULES ---
+    match /users/{userId} {
+      allow get, list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'adventureRank', 'adventureXp',
+                         'starlightGems', 'mora', 'expTomes', 'bossCores',
+                         'activeHeroId', 'unlockedWaypoints', 'openedChests',
+                         'raidsCleared', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'adventureRank', 'adventureXp',
+                         'starlightGems', 'mora', 'expTomes', 'bossCores',
+                         'activeHeroId', 'unlockedWaypoints', 'openedChests',
+                         'raidsCleared', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidPlayerProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidPlayerProfile(incoming()) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'adventureRank', 'adventureXp',
+                         'starlightGems', 'mora', 'expTomes', 'bossCores',
+                         'activeHeroId', 'unlockedWaypoints', 'openedChests',
+                         'raidsCleared', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+
+      match /heroes/{heroId} {
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(heroId) &&
+                         request.auth.uid == userId &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().heroId == heroId &&
+                         incoming().keys().hasAll([
+                           'userId', 'heroId', 'level', 'ascensionTier', 'xp',
+                           'constellationLevel', 'talentNormalLv', 'talentSkillLv', 'talentBurstLv',
+                           'weaponId', 'weaponLevel', 'weaponRefinement',
+                           'artifactFlowerLv', 'artifactFeatherLv', 'artifactSandsLv',
+                           'artifactGobletLv', 'artifactCircletLv', 'equippedSet',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'heroId', 'level', 'ascensionTier', 'xp',
+                           'constellationLevel', 'talentNormalLv', 'talentSkillLv', 'talentBurstLv',
+                           'weaponId', 'weaponLevel', 'weaponRefinement',
+                           'artifactFlowerLv', 'artifactFeatherLv', 'artifactSandsLv',
+                           'artifactGobletLv', 'artifactCircletLv', 'equippedSet',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidHeroProgression(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(heroId) &&
+                         isValidHeroProgression(incoming()) &&
+                         request.auth.uid == userId &&
+                         incoming().userId == existing().userId &&
+                         incoming().heroId == existing().heroId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'level', 'ascensionTier', 'xp',
+                           'constellationLevel', 'talentNormalLv', 'talentSkillLv', 'talentBurstLv',
+                           'weaponId', 'weaponLevel', 'weaponRefinement',
+                           'artifactFlowerLv', 'artifactFeatherLv', 'artifactSandsLv',
+                           'artifactGobletLv', 'artifactCircletLv', 'equippedSet',
+                           'updatedAt'
+                         ]);
+
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(heroId) && request.auth.uid == userId;
+      }
+    }
+
+    match /raidRooms/{roomId} {
+      allow get: if isSignedIn() &&
+                    isValidId(roomId) &&
+                    (existing().status == 'waiting' || request.auth.uid in existing().memberUids);
+
+      allow list: if isSignedIn() &&
+                     (resource.data.status == 'waiting' || request.auth.uid in resource.data.memberUids);
+
+      allow create: if isSignedIn() &&
+                       isValidId(roomId) &&
+                       incoming().hostUserId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().memberUids.size() == 1 &&
+                       incoming().memberCount == 1 &&
+                       incoming().status == 'waiting' &&
+                       incoming().keys().hasAll([
+                         'hostUserId', 'hostName', 'dungeonId', 'dungeonName', 'difficulty',
+                         'status', 'bossName', 'bossElement', 'bossHp', 'bossMaxHp',
+                         'bossShield', 'bossMaxShield', 'phase', 'memberUids', 'memberCount',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'hostUserId', 'hostName', 'dungeonId', 'dungeonName', 'difficulty',
+                         'status', 'bossName', 'bossElement', 'bossHp', 'bossMaxHp',
+                         'bossShield', 'bossMaxShield', 'phase', 'memberUids', 'memberCount',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidRaidRoom(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(roomId) &&
+                       isValidRaidRoom(incoming()) &&
+                       existing().status in ['waiting', 'active'] &&
+                       incoming().hostUserId == existing().hostUserId &&
+                       incoming().dungeonId == existing().dungeonId &&
+                       incoming().difficulty == existing().difficulty &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       (
+                         // Action 1: Join waiting room
+                         (
+                           existing().status == 'waiting' &&
+                           incoming().status == 'waiting' &&
+                           !(request.auth.uid in existing().memberUids) &&
+                           request.auth.uid in incoming().memberUids &&
+                           incoming().memberUids.hasAll(existing().memberUids) &&
+                           incoming().memberUids.size() == existing().memberUids.size() + 1 &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'memberCount', 'updatedAt'])
+                         ) ||
+                         // Action 2: Leave room (non-host)
+                         (
+                           request.auth.uid in existing().memberUids &&
+                           request.auth.uid != existing().hostUserId &&
+                           !(request.auth.uid in incoming().memberUids) &&
+                           existing().memberUids.hasAll(incoming().memberUids) &&
+                           incoming().memberUids.size() == existing().memberUids.size() - 1 &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'memberCount', 'updatedAt'])
+                         ) ||
+                         // Action 3: Host starts raid
+                         (
+                           request.auth.uid == existing().hostUserId &&
+                           existing().status == 'waiting' &&
+                           incoming().status == 'active' &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                         ) ||
+                         // Action 4: Member syncs boss damage / phase / clear
+                         (
+                           request.auth.uid in existing().memberUids &&
+                           existing().status == 'active' &&
+                           incoming().status in ['active', 'cleared', 'failed'] &&
+                           incoming().bossHp <= existing().bossHp &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['bossHp', 'bossShield', 'phase', 'status', 'updatedAt'])
+                         )
+                       );
+
+      allow delete: if isSignedIn() && isValidId(roomId) && request.auth.uid == existing().hostUserId;
+
+      match /members/{memberUid} {
+        allow get: if isSignedIn() &&
+                      isValidId(roomId) &&
+                      isValidId(memberUid) &&
+                      (request.auth.uid == memberUid || request.auth.uid in existing().memberUids);
+
+        allow list: if isSignedIn() &&
+                       (request.auth.uid in resource.data.memberUids || resource.data.userId == request.auth.uid);
+
+        allow create: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(memberUid) &&
+                         request.auth.uid == memberUid &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().roomId == roomId &&
+                         incoming().keys().hasAll([
+                           'userId', 'roomId', 'displayName', 'heroId', 'heroLevel', 'combatPower',
+                           'posX', 'posY', 'posZ', 'yaw', 'hp', 'maxHp', 'damageDealt',
+                           'isReady', 'lastAction', 'memberUids', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'roomId', 'displayName', 'heroId', 'heroLevel', 'combatPower',
+                           'posX', 'posY', 'posZ', 'yaw', 'hp', 'maxHp', 'damageDealt',
+                           'isReady', 'lastAction', 'memberUids', 'updatedAt'
+                         ]) &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidRaidMember(incoming()) &&
+                         existsAfter(/databases/$(database)/documents/raidRooms/$(roomId)) &&
+                         request.auth.uid in getAfter(/databases/$(database)/documents/raidRooms/$(roomId)).data.memberUids;
+
+        allow update: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(memberUid) &&
+                         isValidRaidMember(incoming()) &&
+                         request.auth.uid == memberUid &&
+                         incoming().userId == existing().userId &&
+                         incoming().roomId == existing().roomId &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'displayName', 'heroId', 'heroLevel', 'combatPower',
+                           'posX', 'posY', 'posZ', 'yaw', 'hp', 'maxHp', 'damageDealt',
+                           'isReady', 'lastAction', 'memberUids', 'updatedAt'
+                         ]);
+
+        allow delete: if isSignedIn() && isValidId(roomId) && isValidId(memberUid) && request.auth.uid == memberUid;
+      }
+    }
+  }
+}
